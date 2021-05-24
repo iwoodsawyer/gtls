@@ -1,0 +1,470 @@
+***********************************************************************
+                        Fortran 77 Program
+                                of
+            the PARTIAL TOTAL LEAST SQUARES ALGORITHM.
+            ------------------------------------------
+
+
+      Sabine VAN HUFFEL
+      ESAT Laboratory, KU Leuven.
+      Kardinaal Mercierlaan 94, 3030 Heverlee, Belgium
+
+***********************************************************************
+
+   SUBROUTINE : PTLS
+
+ 1 PURPOSE:
+
+   The subroutine PTLS solves the Total Least Squares (TLS) problem by
+   using a Partial Singular Value Decomposition (PSVD), hereby improving
+   considerably the computational efficiency with respect to the classi-
+   cal TLS algorithm.
+   The TLS problem assumes an overdetermined set of linear equations
+   AX = B, where both the data matrix A as well as the observation
+   matrix B are inaccurate. If the perturbations D on the data [A;B]
+   have zero mean and if their covariance matrix E(D'D) with E the ex-
+   pected value operator, equals the identity matrix up to an unknown
+   scaling factor (e.g. when all the errors are independent and equally
+   sized), then the routine computes a strongly consistent estimate
+   of the true solution of the corresponding unperturbed set.
+   The routine also solves determined and underdetermined sets of
+   equations by computing the minimum norm solution.
+   It is assumed that all preprocessing measures (scaling, coordinate
+   transformations, whitening, ... ) of the data have been performed
+   in advance.
+
+ 2 SPECIFICATION:
+
+   SUBROUTINE PTLS(C, LDC, M, N, L, RANK, THETA, X, LDX, Q, INUL, WRK,
+                   IWRK, LWRK, TOL1, TOL2, IERR, IWARN)
+   INTEGER LDC, M, N, L, RANK, LDX, IERR, IWARN, IWRK(N+L)
+   DOUBLE PRECISION THETA, TOL1, TOL2
+   DOUBLE PRECISION C(LDC,N+L), X(LDX,L), Q(min(M,N+L)+min(M+1,N+L)),
+                    WRK(*)
+   LOGICAL INUL(N+L), LWRK(N+L)
+
+ 3 ARGUMENT LIST:
+
+   3.1 ARGUMENTS IN
+
+       C - DOUBLE PRECISION array of DIMENSION (LDC,N+L).
+           The leading M x (N + L) part of this array contains A and B
+           as follows:
+           The first N columns contain the data matrix A, and the last
+           L columns the observation matrix B (right-hand sides).
+           NOTE that this array is overwritten.
+
+       LDC - INTEGER.
+           The declared leading dimension of the array C.
+           LDC >= max(M,(N+L)).
+
+       M - INTEGER.
+           The number of rows in the data matrix A and the observation
+           matrix B.
+
+       N - INTEGER.
+           The number of columns in the data matrix A.
+
+       L - INTEGER.
+           The number of columns in the observation matrix B.
+
+       RANK - INTEGER.
+           The rank of the TLS approximation [A+DA;B+DB].
+           On entry there are two possibilities:
+           i)  RANK <  0: the rank is to be computed by the routine.
+           ii) RANK >= 0: specifies the given rank.
+               RANK <= min(M,N).
+               NOTE that RANK may be overwritten, if C has multiple
+                    singular values or if the upper triangular matrix
+                    F is singular (see 6 METHOD DESCRIPTION).
+
+       THETA - DOUBLE PRECISION.
+           On entry, there are two possibilities (depending on RANK):
+           i)  RANK <  0: the rank of the TLS approximation [A+DA;B+DB]
+               is computed from THETA and equals min(M,N+L) - d, where
+               d equals the number of singular values of [A;B] <= THETA.
+               THETA >= 0.
+           ii) RANK >= 0: THETA is an initial estimate for computing a
+               lower bound of the RANK largest singular values of [A;B].
+               If not available, assign a negative value (< 0) to THETA.
+               NOTE that THETA is overwritten.
+
+   3.2 ARGUMENTS OUT
+
+       C - DOUBLE PRECISION array of DIMENSION (LDC,N+L).
+           The first N + L components of the columns of C whose
+           index i corresponds with an INUL(i) = .TRUE., are the
+           N + L - RANK base vectors of the right singular subspace
+           corresponding to the singular values of C which are <= THETA.
+           The TLS solution is computed from these vectors.
+
+       RANK - INTEGER.
+           RANK specifies the rank of [A+DA;B+DB].
+           If not specified by the user, then RANK is computed by the
+           routine.
+           If specified by the user, then the specified RANK is changed
+           by the routine if the RANK-th and the (RANK+1)-th singular
+           value of [A;B] coincide up to the precision given by TOL1,
+           or if the upper triangular matrix F (see 6 METHOD DESCRIP-
+           TION) is singular.
+
+       THETA - DOUBLE PRECISION.
+           If RANK >= 0, then THETA specifies the computed bound such
+           that precisely RANK singular values of [A;B] are greater
+           than THETA + TOL1.
+
+       X - DOUBLE PRECISION array of DIMENSION (LDX,L).
+           The leading N x L part of this array contains the solutions
+           to the TLS problems specified by A and B.
+
+       LDX - INTEGER.
+           The declared leading dimension of the array X .
+           LDX >= N.
+
+       Q - DOUBLE PRECISION array of DIMENSION (min(M,N+L)+min(M+1,N+L))
+           Returns the partially diagonalized bidiagonal computed from
+           C, at the moment that the desired singular subspace has been
+           found.
+           The first p = min(M,N+L) entries of Q contain the diagonal
+           elements q(1),...,q(p) and the entries Q(p+2),...,Q(p+s)
+           (with s = min(M+1,N+L)) contain the superdiagonal elements
+           e(2),...,e(s). Q(p+1) = 0.
+
+       INUL - LOGICAL array of DIMENSION (N+L).
+           The indices of the elements of INUL with value .TRUE.
+           indicate the columns in C containing the base vectors of the
+           right singular subspace of C from which the TLS solution has
+           been computed.
+
+   3.3 WORK SPACE
+
+       WRK - DOUBLE PRECISION array of DIMENSION (t).
+           The dimension t = M + N + L + (N+L)*(N+L-1)/2 if M >= N + L;
+                             M + N + L + M*(N+L-(M+1)/2) if M <  N + L.
+
+       IWRK - INTEGER array of DIMENSION (N+L).
+
+       LWRK - LOGICAL array of DIMENSION (N+L).
+
+   3.4 TOLERANCES
+
+       TOL1 - DOUBLE PRECISION.
+           This parameter defines the multiplicity of singular values by
+           considering all singular values within an interval of length
+           TOL1 as coinciding. TOL1 is used in checking how many singu-
+           lar values are <= THETA. Also in computing an appropriate
+           upper bound THETA by a bisection method, TOL1 is used as stop
+           criterion defining the minimal subinterval length.
+           According to the numerical properties of the SVD, TOL1 must
+           be >= !!C!! x EPS where !!C!! denotes the L2-norm and EPS
+           is the machine precision.
+
+       TOL2 - DOUBLE PRECISION.
+           Working precision for the computations in PTLS. This parame-
+           ter specifies that elements of matrices used in the computa-
+           tion, which are <= TOL2 in absolute value, are considered to
+           be zero.
+
+   3.6 ERROR INDICATORS
+
+       IERR - INTEGER.
+           On return, IERR contains 0 unless the subroutine has failed.
+
+       IWARN - INTEGER.
+           On return, IWARN contains 0 unless RANK has been lowered by
+           the routine.
+
+ 4 ERROR INDICATORS and WARNINGS:
+
+   Errors detected by the routine:
+
+       IERR = 0: successful completion.
+              1: number M of rows of array C = [A;B] smaller than 1.
+              2: number N of columns of matrix A smaller than 1.
+              3: number L of columns of matrix B smaller than 1.
+              4: leading dimension LDC of array C is smaller than
+                 max(M,N+L).
+              5: leading dimension LDX of array X is smaller than N.
+              6: rank of the TLS approximation [A+DA;B+DB] is larger
+                 than min(M,N).
+              7: the parameters RANK and THETA are both negative (< 0).
+              8: tolerance TOL1 is negative.
+              9: tolerance TOL2 is negative.
+             10: maximum number of QR/QL iteration steps (50) exceeded.
+
+   Warnings given by the routine:
+
+       IWARN = 0: no warnings.
+               1: the rank of matrix C has been lowered because a
+                  singular value of multiplicity > 1 has been found.
+               2: the rank of matrix C has been lowered because a
+                  singular upper triangular matrix F has been found.
+
+ 5 EXTERNAL SUBROUTINES and FUNCTIONS:
+
+   DAXPY, DDOT, DCOPY from BLAS [6];
+   DQRDC from LINPACK [7];
+   BIDIAG, CANCEL, HOUSH, INIT, QRQL.
+
+ 6 METHOD DESCRIPTION:
+
+   Let C = [A;B] denote the matrix formed by adjoining the columns of B
+   to the columns of A on the right.
+
+   Total Least Squares (TLS) definition:
+      Given matrices A and B, find a matrix X satisfying
+
+           (A + DA) X = B + DB,
+
+      where A and DA are M x N matrices, B and DB are M x L matrices,
+      X is an N x L matrix.
+      The solution X must be such that the Frobenius norm of [DA;DB] is
+      a minimum and each column of B + DB is in the range of A + DA.
+      Whenever the solution is not unique, PTLS singles out the mini-
+      mum norm solution X.
+
+   Let V denote the right singular subspace of C.
+   With the routine PTLS the TLS solution can be computed from any
+   orthogonal basis of the subspace of V corresponding to the smallest
+   singular values of C. Therefore, Partial Singular Value Decomposition
+   (PSVD) can be used instead of classical SVD.
+   The dimension of this subspace of V may be determined by the rank of
+   C or by an upper bound for those smallest singular values.
+   The PTLS algorithm proceeds as follows (see [2 - 5]):
+
+   Step 1: Bidiagonalization phase
+           -----------------------
+   1.a): If M >= 5 x (N + L)/3, transform C into upper triangular form R
+         by Householder transformations.
+   1.b): Transform C (or R) into bidiagonal form (p = min(M,N+L)):
+
+                    !q(1) e(2)  0   ...  0  !
+               (0)  ! 0   q(2) e(3)      .  !
+              J   = ! .                  .  !
+                    ! .                 e(p)!
+                    ! 0             ... q(p)!
+
+         if M >= N + L, or
+
+                    !q(1) e(2)  0   ...  0     0   !
+               (0)  ! 0   q(2) e(3)      .     .   !
+              J   = ! .                  .     .   !
+                    ! .                 e(p)   .   !
+                    ! 0             ... q(p) e(p+1)!
+
+         if M < N + L, using Householder transformations.
+   1.c): Initialize the right singular base matrix with the identity
+         matrix.
+   1.d): If M < N + L, then cancel e(p+1) by Givens rotations and reduce
+         the bidiagonal to M x M . Accumulate the Givens rotations in V.
+
+   Step 2: Partial diagonalization phase
+           -----------------------------
+   If the upper bound THETA is not given, then compute THETA such that
+   precisely p - RANK singular values (p=min(M,N+L)) of the bidiagonal
+   are <= THETA, using a bisection method [5].
+   Diagonalize the given bidiagonal J partially, using either QL itera-
+   tions (if the upper left diagonal element of the considered subbi-
+   diagonal > the lower right diagonal element) or QR iterations, such
+   such that J is splitted into unreduced subbidiagonals whose singular
+   values are either all larger than THETA or are all less than or
+   equal to THETA.
+   Accumulate the Givens rotations in V.
+
+   Step 3: Back transformation phase
+           -------------------------
+   Apply the Householder transformations of step 1.b) onto the base
+   vectors of V associated with the subbidiagonals with all singular
+   values <= THETA.
+
+   Step 4: Computation of F and Y
+           ----------------------
+   Let V2 be the matrix of the columns of V corresponding to the
+   (N + L - RANK) smallest singular values of C.
+   Compute with Householder transformations the matrices F and Y
+   such that:
+
+                      !VH   Y!
+             V2 x Q = !      !
+                      !0    F!
+
+   with Q being an orthogonal matrix, VH an N x (N - RANK), Y an N x L
+   and F an L x L upper triangular matrix.
+   If F is singular, then lower the rank RANK by one and repeat the
+   steps 2, 3 and 4.
+
+   Step 5: Computation of the TLS solution
+           -------------------------------
+   If F is not singular then the solutions X are obtained by solving
+   the following equations by forward elimination:
+
+             X F = -Y.
+
+   Notes:
+   - In case the rank must be lowered in Step 4, some additional base
+     vectors must be computed in Step 2. The additional computations are
+     kept to a minimum.
+   - If the rank RANK is lowered in Step 4 but the multiplicity of the
+     RANK-th singular value is > 1, the rank is further lowered with its
+     multiplicity defined by the parameter TOL1. This is done in the be-
+     ginning of Step 2 by the routine which estimates THETA using a bi-
+     section method.
+
+ 7 REFERENCES :
+
+   [1] G.H. Golub and C.F. Van Loan, An Analysis of the Total Least
+       Squares Problem. SIAM J. Numer. Anal., 17 (1980), 883-893.
+   [2] S. Van Huffel, J. Vandewalle and A. Haegemans, An efficient and
+       reliable algorithm for computing the singular subspace of a
+       matrix associated with its smallest singular values.
+       J. Comput. and Applied Math., 19 (1987), 313 - 330.
+   [3] S. Van Huffel, Analysis of the total least squares problem and
+       its use in parameter estimation. Doctoral dissertation, Dept. of
+       Electr. Eng., K.U.Leuven, June 1987.
+   [4] T.F.Chan, An improved algorithm for computing the singular value
+       decomposition. ACM Trans. Math. Software, 8 (1982), 72-83.
+   [5] S. Van Huffel and J. Vandewalle, The Partial Total Least Squares
+       Algorithm. J. Comput. and Applied Math., 21 (1988),to appear.
+   [6] C.L. Lawson, R.J. Hanson, F.T. Krogh and O.R. Kincaid, Basic Lin-
+       ear Algebra Subprograms for FORTRAN Usage. ACM Trans. Math. Soft-
+       ware, 5 (1979), 308-323.
+   [7] J.J. Dongarra, J.R. Bunch, C.B. Moler and G.W. Stewart, LINPACK
+       User's Guide. SIAM, Philadelphia (1979).
+
+ 8 NUMERICAL ASPECTS:
+
+   The computational efficiency of the PTLS algorithm compared with the
+   classical TLS algorithm (see [2 - 5]) is obtained by making use of
+   PSVD (see [1]) instead of performing the entire SVD.
+   Depending on the gap between the RANK-th and the (RANK+1)-th singular
+   value of C, the number N + L - RANK of base vectors to be computed
+   w.r.t. the column dimension N + L of C and the desired accuracy TOL2,
+   the PTLS algorithm is approximately two times faster than the classi-
+   cal TLS algorithm.
+   However PTLS requires more memory space, namely:
+     (N + L) x (N + L - 1)/2 if M >= N + L,
+     M x (N + L - (M + 1)/2) if M <  N + L,
+   extra storage locations. This is because the Householder transforma-
+   tions performed onto the rows of C in the bidiagonalization phase
+   (see step 1) must be kept until the end (step 5).
+
+ 9 EXAMPLE:
+
+   9.1 PROGRAM TEXT
+
+       PARAMETER (IN = 5, IOUT = 6)
+       PARAMETER (LDC = 30, LDX = 10)
+       INTEGER M, N, L, NL, RANK, IERR, IWARN, IWRK(11)
+       LOGICAL INUL(11), LWRK(11)
+       DOUBLE PRECISION C(LDC,11), X(LDX,10), Q(22),
+      *       WRK(44),
+      *       THETA, TOL1, TOL2
+       INTEGER I, J, K
+       INTRINSIC MIN
+       READ(IN,12) M, N, L, RANK, THETA
+       WRITE(IOUT,13) M, N, L, RANK, THETA
+       NL = N + L
+       WRITE(IOUT,9)
+       DO 1 I = 1, M
+          READ(IN,5) (C(I,J), J=1,NL)
+   1   CONTINUE
+       WRITE(IOUT,6)
+       DO 2 I = 1, M
+          WRITE(IOUT,7) (C(I,J), J=1,NL)
+   2   CONTINUE
+       TOL1 = 1.0D-08
+       TOL2 = 1.0D-10
+       CALL PTLS(C, LDC, M, N, L, RANK, THETA, X, LDX, Q, INUL, WRK,
+      *          IWRK, LWRK, TOL1, TOL2, IERR, IWARN)
+       WRITE(IOUT,8) IERR, IWARN
+       WRITE(IOUT,18) RANK, THETA
+       K = MIN(M,NL)
+       WRITE(IOUT,10) (Q(I), I = 1, K)
+       WRITE(IOUT,11) (Q(K+I), I = 2, K)
+       WRITE(IOUT,14)
+       K = 0
+       DO 3 I = 1, NL
+          IF (INUL(I)) THEN
+             K = K + 1
+             WRITE(IOUT,15) K, I
+             WRITE(IOUT,7) (C(J,I), J = 1, NL)
+          END IF
+   3   CONTINUE
+       WRITE(IOUT,16)
+       DO 4 I = 1, L
+          WRITE(IOUT,17) I, (X(J,I), J = 1, N)
+   4   CONTINUE
+       STOP
+   5   FORMAT(4D15.0)
+   6   FORMAT(/' ',5X,'C(*,I)',8X,'C(*,I+1)',7X,'C(*,I+2)',7X,
+      *       'C(*,I+3)')
+   7   FORMAT(' ',4D15.6)
+   8   FORMAT(/' IERR = ',I3,'   IWARN = ',I3)
+   9   FORMAT(/' PARTIAL TOTAL LEAST SQUARES TEST PROGRAM'/1X,40('-')/)
+  10   FORMAT(/' DIAGONAL OF THE PARTIALLY DIAGONALIZED BIDIAGONAL='
+      *       /(1X,4D15.6))
+  11   FORMAT(/' SUPERDIAGONAL OF THE PARTIALLY DIAGONALIZED ',
+      *       'BIDIAGONAL='/(1X,4D15.6))
+  12   FORMAT(4I3,D12.5)
+  13   FORMAT(/' M =',I3,'  N =',I3,'  L =',I3, '  RANK =',I3,
+      *        '  THETA =',D12.5)
+  14   FORMAT(/' BASIS OF THE COMPUTED RIGHT SINGULAR SUBSPACE :'/1X,
+      *       45('-'))
+  15   FORMAT(' THE ',I2,'-TH BASE VECTOR V(*,',I2,') =')
+  16   FORMAT(/' TLS SOLUTION :'/1X,12('*'))
+  17   FORMAT(/' X(*,',I2,') = '/(' ',4D15.6))
+  18   FORMAT(/' COMPUTED RANK =',I3,4X,' COMPUTED BOUND THETA = ',
+      *       D12.5)
+       END
+
+   9.2 PROGRAM DATA
+
+        6  3  1 -1 1.00000D-03
+       0.80010002D+00 0.39985167D+00 0.60005390D+00 0.89999446D+00
+       0.29996484D+00 0.69990689D+00 0.39997269D+00 0.82997570D+00
+       0.49994235D+00 0.60003167D+00 0.20012361D+00 0.79011189D+00
+       0.90013643D+00 0.20016919D+00 0.79995025D+00 0.85002662D+00
+       0.39998539D+00 0.80006338D+00 0.49985474D+00 0.99016399D+00
+       0.20002274D+00 0.90007114D+00 0.70009777D+00 0.10299439D+01
+
+   9.3 PROGRAM RESULTS
+
+       M =  6  N =  3  L =  1  RANK = -1  THETA = 0.10000D-02
+
+       PARTIAL TOTAL LEAST SQUARES TEST PROGRAM
+       ----------------------------------------
+
+
+            C(*,I)        C(*,I+1)       C(*,I+2)       C(*,I+3)
+          0.800100D+00   0.399852D+00   0.600054D+00   0.899994D+00
+          0.299965D+00   0.699907D+00   0.399973D+00   0.829976D+00
+          0.499942D+00   0.600032D+00   0.200124D+00   0.790112D+00
+          0.900136D+00   0.200169D+00   0.799950D+00   0.850027D+00
+          0.399985D+00   0.800063D+00   0.499855D+00   0.990164D+00
+          0.200023D+00   0.900071D+00   0.700098D+00   0.102994D+01
+
+       IERR =   0   IWARN =   0
+
+       COMPUTED RANK =  3     COMPUTED BOUND THETA =  0.10000D-02
+
+       DIAGONAL OF THE PARTIALLY DIAGONALIZED BIDIAGONAL=
+          0.322802D+01   0.871401D+00   0.369809D+00   0.128626D-03
+
+       SUPERDIAGONAL OF THE PARTIALLY DIAGONALIZED BIDIAGONAL=
+          0.286516D-01   0.167536D-01  -0.739580D-22
+
+       BASIS OF THE COMPUTED RIGHT SINGULAR SUBSPACE :
+       ---------------------------------------------
+       THE  1-TH BASE VECTOR V(*, 4) =
+         -0.355483D+00  -0.568663D+00  -0.212821D+00   0.710606D+00
+
+       TLS SOLUTION :
+       ************
+
+       X(*, 1) =
+          0.500254D+00   0.800251D+00   0.299492D+00
+
+***********************************************************************
+
+   1988, February 15.
+

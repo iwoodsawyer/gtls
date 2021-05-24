@@ -1,0 +1,360 @@
+***********************************************************************
+                        Fortran 77 Program
+                                of
+       the EXTENDED CLASSICAL TOTAL LEAST SQUARES ALGORITHM.
+       -----------------------------------------------------
+
+
+      Sabine VAN HUFFEL
+      ESAT Laboratory, KU Leuven.
+      Kardinaal Mercierlaan 94, 3030 Heverlee, Belgium
+
+***********************************************************************
+
+   SUBROUTINE : DTLS
+
+ 1 PURPOSE:
+
+   The subroutine DTLS solves the Total Least Squares (TLS) problem.
+   The TLS problem assumes an overdetermined set of linear equations
+   AX = B, where both the data matrix A as well as the observation
+   matrix B are inaccurate. If the perturbations D on the data [A;B]
+   have zero mean and their covariance matrix E(D'D), with E the
+   expected value operator, equals the identity matrix up to an
+   unknown scaling factor (e.g. when all errors are independent
+   and equally sized), then the routine computes a strongly
+   consistent estimate of the true solution of the corresponding
+   unperturbed set.
+   The routine also solves determined and underdetermined sets of
+   equations by computing the minimum norm solution.
+   It is assumed that all preprocessing measures (scaling, coordinate
+   transformations, whitening, ... ) of the data have been performed
+   in advance.
+
+ 2 SPECIFICATION:
+
+   SUBROUTINE DTLS(C, LDC, M, N, L, S, X, LDX, WRK, RANK, TOL1, TOL2,
+                   COMPRT, IERR, IWARN)
+   INTEGER LDC, M, N, L, RANK, LDX, IERR, IWARN
+   DOUBLE PRECISION TOL1, TOL2
+   DOUBLE PRECISION C(LDC,N+L), S(N+L), WRK(N+L+M), X(LDX,L)
+   CHARACTER COMPRT*1
+
+ 3 ARGUMENT LIST:
+
+   3.1 ARGUMENTS IN
+
+       C - DOUBLE PRECISION array of DIMENSION (LDC,N+L).
+           The leading M x (N + L) part of this array contains A and B
+           as follows:
+           The first N columns contain the data matrix A, and the last
+           L columns the observation matrix B (right-hand sides).
+           NOTE that this array is overwritten.
+
+       LDC - INTEGER.
+           The declared leading dimension of the array C.
+           LDC >= max(M,(N+L)).
+
+       M - INTEGER.
+           The number of rows in the data matrix A and the observation
+           matrix B.
+
+       N - INTEGER.
+           The number of columns in the data matrix A.
+
+       L - INTEGER.
+           The number of columns in the observation matrix B.
+
+       RANK - INTEGER.
+           The rank of the TLS approximation [A+DA;B+DB].
+           On entry there are two possibilities (depending on COMPRT):
+           i)  RANK is specified by the user.
+               RANK <= min(M,N).
+               NOTE that RANK may be overwritten, if C has multiple
+                    singular values.
+           ii) RANK is computed by the routine.
+
+   3.2 ARGUMENTS OUT
+
+       C - DOUBLE PRECISION array of DIMENSION (LDC,N+L).
+           The first NL = N + L rows contain the NL right singular
+           vectors of C = [A;B]
+
+       S - DOUBLE PRECISION array of DIMENSION (N+L).
+           The first min(M,N+L) entries of S contain the singular values
+           of matrix C, arranged in descending order of magnitude.
+
+       X - DOUBLE PRECISION array of DIMENSION (LDX,L).
+           The leading N x L part of this array contains the solutions
+           to the TLS problems specified by A and B.
+
+       LDX - INTEGER.
+           The declared leading dimension of the array X .
+           LDX >= N.
+
+       RANK - INTEGER.
+           If not specified by the user (see COMPRT) then RANK is
+           computed by the routine.
+           If specified by the user (see COMPRT) then the specified
+           RANK is changed by the routine if the RANK-th and the
+           (RANK+1)-th singular value of C are considered to be equal
+           or if the upper triangular matrix F (see 6 METHOD DESCRIP-
+           TION) is singular.
+
+   3.3 WORK SPACE
+
+       WRK - DOUBLE PRECISION array of DIMENSION (N+L+M).
+
+   3.4 TOLERANCES
+
+       TOL1 - DOUBLE PRECISION.
+           In computing the rank of the approximation [A+DA;B+DB] or
+           in checking the multiplicity of singular values, TOL1 spe-
+           cifies that S(i) and S(j) are considered to be equal if
+           sqrt(S(i)**2 - S(j)**2) is less than or equal to TOL1
+           (with S(j) zero in case of rank computation).
+           On entry there are two possibilities (depending on COMPRT):
+           i)  TOL1 is specified by the user.
+           ii) TOL1 is computed by the routine. In this case the user
+               must enter the value SDEV, i.e. the estimated standard
+               deviation of the error on each element of the matrix
+               C, as input value of TOL1.
+           TOL1 >= machine precision. If not, DTLS corrects its value.
+
+       TOL2 - DOUBLE PRECISION.
+           In checking the singularity of the upper triangular matrix
+           F (see description), TOL2 specifies that F is considered to
+           be singular if the absolute value of one of its diagonal
+           elements is smaller than or equal to TOL2.
+           TOL2 >= machine precision. If not, DTLS corrects its value.
+
+   3.5 MODE PARAMETER
+
+       COMPRT - CHARACTER*1.
+           Specifies whether RANK and/or TOL1 is to be computed.
+           COMPRT = 'R' or 'r': RANK    )
+                    'T' or 't': TOL1    )  is to be computed.
+                    'N' or 'n': neither )
+                    any other character: both RANK and TOL1 will be
+                    computed.
+
+   3.6 ERROR INDICATORS
+
+       IERR - INTEGER.
+           On return, IERR contains 0 unless the subroutine has failed.
+
+       IWARN - INTEGER.
+           On return, IWARN contains 0 unless RANK has been lowered by
+           the routine.
+
+ 4 ERROR INDICATORS and WARNINGS:
+
+   Errors detected by the routine:
+
+       IERR = 0: successful completion.
+              1: number M of rows of array C = [A;B] is smaller than 1.
+              2: number N of columns of matrix A is smaller than 1.
+              3: number L of columns of matrix B is smaller than 1.
+              4: leading dimension LDC of array C is smaller than
+                 max(M,N+L).
+              5: leading dimension LDX of array X is smaller than N.
+              6: rank of the TLS approximation [A+DA;B+DB] is larger
+                 than min(M,N).
+              1xxx: LINPACK routine DSVDC was unable to compute all
+                    of the singular values of C. xxx is the error code
+                    from LINPACK routine DSVDC.
+
+   Warnings given by the routine:
+
+       IWARN = 0: no warnings.
+               1: the rank of matrix C has been lowered because a
+                  singular value of multiplicity > 1 has been found.
+               2: the rank of matrix C has been lowered because a
+                  singular upper triangular matrix F has been found.
+
+ 5 EXTERNAL SUBROUTINES and FUNCTIONS:
+
+   DAXPY, DDOT, DCOPY from BLAS [4];
+   DSVDC, DQRDC from LINPACK [5];
+   HOUSH, TR2 .
+
+ 6 METHOD DESCRIPTION:
+
+   Let [A;B] denote the matrix formed by adjoining the columns of B to
+   the columns of A on the right.
+
+   Total Least Squares (TLS) definition:
+      Given matrices A and B, find a matrix X satisfying
+
+           (A + DA) X = B + DB,
+
+      where A and DA are M x N matrices, B and DB are M x L matrices,
+      X is an N x L matrix.
+      The solution X must be such that the Frobenius norm of [DA;DB] is
+      a minimum and each column of B + DB is in the range of A + DA.
+      Whenever the solution is not unique, DTLS singles out the mini-
+      mum norm solution X.
+
+   Define matrix C = [A;B] and S(i) as its i-th singular value,
+   i = 1,...,(N+L). Let NL = N + L.
+   The Classical TLS algorithm proceeds as follows (see [3]):
+
+   Step 1:
+   1.a): If M >= 5*NL/3, transform C into upper triangular form R by
+         Householder transformations.
+   1.b): Compute the singular value decomposition (SVD) USV' of C (or R)
+
+   Step 2: If not fixed by the user, compute the rank R0 of the data
+          [A;B] as follows: S(1) >= ... >= S(R0) > TOL1 >= ... >= S(NL).
+          Using [2] TOL1 can be computed from the standard deviation
+          SDEV of the errors on [A;B]:
+
+               TOL1 = sqrt(2 * max(M,NL)) * SDEV.
+
+          The rank R of the approximation [A+DA;B+DB] is then equal to
+          the minimum of N and R0.
+
+   Step 3: Let V2 be the matrix of the columns of V corresponding to the
+          (NL - R) smallest singular values of C, i.e. the last (NL - R)
+          columns of V.
+          Compute with Householder transformations the orthogonal matrix
+          Q such that:
+
+                      !VH   Y!
+             V2 x Q = !      !
+                      !0    F!
+
+          with VH being N x (N - R), Y is N x L and F is L x L upper
+          triangular.
+          If F is singular, then lower the rank R with the multiplicity
+          of S(R) and repeat this step.
+
+   Step 4: If F is not singular then the solutions X are obtained by
+          solving the following equations by forward elimination:
+
+             X F = -Y
+   End
+
+   Notes :
+   - The TLS solution is unique if R = N and F is not singular and
+     S(N) > S(N+1).
+   - If F is singular, Golub and Van Loan (see [1]) claim that there is
+     no TLS solution. It is however proven in [3] that for those cases,
+     the TLS solution still makes sense and can be determined by further
+     lowering the rank (as explained above). The obtained TLS solution
+     remains optimal with respect to the TLS criteria in case of one ob-
+     servation vector (L=1), as well as in case of more than one obser-
+     vation vector (L>1) (see [3] for proofs).
+   - DTLS is an extension [3] of the classical TLS method described by
+     Golub and Van Loan [1].
+
+ 7 REFERENCES :
+
+   [1] G.H. Golub and C.F. Van Loan, An Analysis of the Total Least
+       Squares Problem. SIAM J. Numer. Anal., 17 (1980), 883-893.
+   [2] J. Staar, J. Vandewalle and M. Wemans, Realization of truncated
+       impulse response sequences with prescribed uncertainty. Proc.
+       IFAC World Congress Kyoto, Vol.I (1981), 7-12.
+   [3] S. Van Huffel, Analysis of the total least squares problem and
+       its use in parameter estimation. Doctoral dissertation, Dept. of
+       Electr. Eng., K.U.Leuven, June 1987.
+   [4] C.L. Lawson, R.J. Hanson, F.T. Krogh and O.R. Kincaid, Basic Lin-
+       ear Algebra Subprograms for FORTRAN Usage. ACM Trans. Math. Soft-
+       ware, 5 (1979), 308-323.
+   [5] J.J. Dongarra, J.R. Bunch, C.B. Moler and G.W. Stewart, LINPACK
+       User's Guide. SIAM, Philadelphia (1979).
+
+ 9 EXAMPLE:
+
+   9.1 PROGRAM TEXT
+
+       PARAMETER (IN=5, IOUT=6)
+       PARAMETER (LC=14, LM=10, LN=10, LL=4)
+       INTEGER LDC, M, N, L, LDX, IERR, NL, RANK, IWARN
+       DOUBLE PRECISION C(LC,LN+LL), X(LN,LL), WRK(LM+LN+LL), S(LN+LL),
+      *                 SDEV, TOL2
+       INTEGER I, J, K
+       CHARACTER MODE*1
+       LDC = LC
+       LDX = LN
+       READ(IN, 11) M, N, L
+       WRITE(IOUT, 12) M, N, L
+       NL = N + L
+       WRITE(IOUT, 8)
+       DO 1 I = 1, M
+          READ(IN, 4) (C(I,J), J=1,NL)
+    1  CONTINUE
+       WRITE(IOUT, 5)
+       DO 2 I = 1, M
+          WRITE (IOUT, 6) (C(I,J), J=1,NL)
+    2  CONTINUE
+       MODE = 'X'
+       SDEV = 1.0D-04
+       TOL2  = 1.0D-04
+       CALL DTLS(C, LDC, M, N, L, S, X, LDX, WRK, RANK, SDEV, TOL2,
+      *          MODE, IERR, IWARN)
+       WRITE(IOUT, 7) IERR, IWARN
+       WRITE(IOUT,14) RANK
+       WRITE(IOUT, 9) (S(I), I=1,NL)
+       WRITE(IOUT,13)
+       DO 3 I = 1, L
+          WRITE (IOUT, 10) I, (X(J,I), J=1,N)
+    3  CONTINUE
+       STOP
+    4  FORMAT(4D15.0)
+    5  FORMAT(/' ',5X,'C(*,I)',8X,'C(*,I+1)',7X,'C(*,I+2)',7X,
+      *        'C(*,I+3)')
+    6  FORMAT(' ',4D15.6)
+    7  FORMAT(/' IERR = ',I3,'   IWARN = ',I3)
+    8  FORMAT(/' TOTAL LEAST SQUARES TEST PROGRAM'/1X,32('-')/)
+    9  FORMAT(/' SINGULAR VALUES S(I) OF C = '/(' ',4D15.6))
+   10  FORMAT(/' X(*,'I2,') = '/(' ',4D15.6))
+   11  FORMAT(3I3)
+   12  FORMAT(/' M = ',I3,3X,'N = ',I3,3X,'L = ',I3)
+   13  FORMAT(/' TLS SOLUTION :'/1X,12('*'))
+   14  FORMAT(/' COMPUTED RANK =',I3)
+       END
+
+   9.2 PROGRAM DATA
+
+       6  3  1
+       0.80010002D+00 0.39985167D+00 0.60005390D+00 0.89999446D+00
+       0.29996484D+00 0.69990689D+00 0.39997269D+00 0.82997570D+00
+       0.49994235D+00 0.60003167D+00 0.20012361D+00 0.79011189D+00
+       0.90013643D+00 0.20016919D+00 0.79995025D+00 0.85002662D+00
+       0.39998539D+00 0.80006338D+00 0.49985474D+00 0.99016399D+00
+       0.20002274D+00 0.90007114D+00 0.70009777D+00 0.10299439D+01
+
+   9.3 PROGRAM RESULTS
+
+       M =   6   N =   3   L =   1
+
+       TOTAL LEAST SQUARES TEST PROGRAM
+       --------------------------------
+
+
+            C(*,I)        C(*,I+1)       C(*,I+2)       C(*,I+3)
+          0.800100D+00   0.399852D+00   0.600054D+00   0.899994D+00
+          0.299965D+00   0.699907D+00   0.399973D+00   0.829976D+00
+          0.499942D+00   0.600032D+00   0.200124D+00   0.790112D+00
+          0.900136D+00   0.200169D+00   0.799950D+00   0.850027D+00
+          0.399985D+00   0.800063D+00   0.499855D+00   0.990164D+00
+          0.200023D+00   0.900071D+00   0.700098D+00   0.102994D+01
+
+       IERR =   0   IWARN =   0
+
+       COMPUTED RANK =  3
+
+       SINGULAR VALUES S(I) OF C =
+          0.322815D+01   0.871560D+00   0.369726D+00   0.128626D-03
+
+       TLS SOLUTION :
+       ************
+
+       X(*, 1) =
+          0.500254D+00   0.800251D+00   0.299492D+00
+
+***********************************************************************
+
+   1988, February 15.
+
