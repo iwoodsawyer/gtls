@@ -1,5 +1,7 @@
 [![View Total Least Squares with mixed and/or weighted disturbances on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://www.mathworks.com/matlabcentral/fileexchange/50332-total-least-squares-with-mixed-and-or-weighted-disturbances)
 
+Goal of this branch is to include mex interface for the partial total least squares from vanhuffel netlib.
+
 These functions calculates the solution for the generalized and/or mixed total least squares problem.
 
 The total least squares problem, also known as errors in variables, solves the over-determined set of linear equations (A0+dA)X = (B0+dB), where covariance matrix of the unknown disturbances dA and dB is considered to be diagonal and denoted by E([dA dB]^T[dA dB]) = sigma_d.*I.
